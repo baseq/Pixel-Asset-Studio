@@ -1,3 +1,9 @@
+"""Browser smoke test for the editor UI (no Electron needed).
+
+  npx vite --config tests/ui/vite.config.ts &      # serves the harness on :5199
+  pip install playwright && playwright install chromium
+  python3 tests/ui/smoke.py
+"""
 from playwright.sync_api import sync_playwright
 import json
 
