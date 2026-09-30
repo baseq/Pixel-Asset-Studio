@@ -22,10 +22,15 @@ mac:
       arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
-  # Unsigned builds work: users open System Settings ▸ Privacy & Security ▸ Open Anyway the first time (macOS 15+). To sign and notarize, set
-  # CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID as secrets.
+  # Ad-hoc signature ('-'): free, no certificate. Apple Silicon refuses to open a quarantined app with no
+  # signature at all ("is damaged"); with this, users get the milder System Settings ▸ Privacy & Security ▸
+  # Open Anyway prompt (macOS 15+). To sign and notarize for real, replace it with a Developer ID
+  # certificate: set CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID as
+  # secrets, remove `identity`, and set notarize: true.
+  identity: '-'
   hardenedRuntime: true
   gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
 dmg:

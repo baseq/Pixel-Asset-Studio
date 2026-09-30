@@ -288,7 +288,9 @@ app.whenReady().then(async () => {
 
   // Auto-update from GitHub Releases (only for packaged builds; dev runs skip it).
   if (app.isPackaged) {
-    const { autoUpdater } = await import('electron-updater')
+    // electron-updater is CommonJS: depending on the bundler the exports land on `default` instead.
+    const updater = await import('electron-updater')
+    const autoUpdater = updater.autoUpdater ?? (updater as unknown as { default: typeof updater }).default.autoUpdater
     autoUpdater.logger = console
     autoUpdater.autoDownload = true
     autoUpdater.on('update-downloaded', (info) => {
