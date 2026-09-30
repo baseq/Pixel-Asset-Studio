@@ -47,6 +47,44 @@ interface PixelWrites {
 }
 
 const MAX_LOG = 2000
+/** Undo history is trimmed (oldest first) once it holds more than this many bytes or groups. */
+const MAX_UNDO_BYTES = 256 * 1024 * 1024
+const MAX_UNDO_GROUPS = 1000
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+/**
+ * A structural snapshot stores every cel twice (before and after). Point unchanged cels of `after`
+ * at the arrays already held by `before` so history only pays for pixels that actually changed.
+ */
+function shareUnchangedCels(before: Project, after: Project): void {
+  for (const sa of after.sprites) {
+    const sb = before.sprites.find((x) => x.id === sa.id)
+    if (!sb) continue
+    for (const [k, data] of Object.entries(sa.cels)) {
+      const old = sb.cels[k]
+      if (old && sameBytes(old, data)) sa.cels[k] = old
+    }
+  }
+}
+
+function patchBytes(p: Patch): number {
+  if (p.t === 'px') return p.idx.length * 24
+  const seen = new Set<Uint8Array>()
+  let n = 0
+  for (const pr of [p.before, p.after])
+    for (const s of pr.sprites)
+      for (const c of Object.values(s.cels))
+        if (!seen.has(c)) {
+          seen.add(c)
+          n += c.byteLength
+        }
+  return n
+}
 
 export function emptyProject(name = 'Untitled'): Project {
   return { version: 1, name, palettes: {}, sprites: [], activeSprite: null, nextId: 1 }
@@ -68,7 +106,8 @@ export class Engine {
   log: LogEntry[] = []
   private undoStack: UndoGroup[] = []
   private redoStack: UndoGroup[] = []
-  private open: UndoGroup | null = null
+  /** One open group per actor, so the UI and an agent can't close or merge each other's edits. */
+  private open = new Map<Actor, UndoGroup>()
   private groupSeq = 0
   private seq = 0
   private listeners = new Set<() => void>()
@@ -90,7 +129,7 @@ export class Engine {
     return {
       project: this.project,
       revision: this.revision,
-      canUndo: this.undoStack.length > 0 || (this.open?.patches.length ?? 0) > 0,
+      canUndo: this.undoStack.length > 0 || [...this.open.values()].some((g) => g.patches.length > 0),
       canRedo: this.redoStack.length > 0,
       log: this.log.slice(-200)
     }
@@ -101,22 +140,44 @@ export class Engine {
     this.project = project
     this.undoStack = []
     this.redoStack = []
-    this.open = null
+    this.open.clear()
     this.revision++
     this.record(actor, 'project_load', `Loaded project '${project.name}'`, this.groupSeq + 1)
     this.notify()
   }
 
-  beginGroup(label = 'group'): void {
-    if (this.open) this.endGroup()
-    this.open = { id: ++this.groupSeq, label, patches: [] }
+  beginGroup(label = 'group', actor: Actor = 'human'): void {
+    this.endGroup(actor)
+    this.open.set(actor, { id: ++this.groupSeq, label, patches: [] })
   }
 
-  endGroup(): void {
-    const g = this.open
-    this.open = null
-    if (g && g.patches.length) this.undoStack.push(g)
+  endGroup(actor: Actor = 'human'): void {
+    const g = this.open.get(actor)
+    this.open.delete(actor)
+    if (g && g.patches.length) this.pushUndo(g)
     this.notify()
+  }
+
+  /** Close the actor's open group and roll back everything it changed (used when a batch fails midway). */
+  abortGroup(actor: Actor = 'human'): void {
+    const g = this.open.get(actor)
+    this.open.delete(actor)
+    if (g && g.patches.length) {
+      for (let i = g.patches.length - 1; i >= 0; i--) this.apply(g.patches[i] as Patch, 'undo')
+      this.revision++
+      this.record(actor, 'abort', `Rolled back ${g.label}`, g.id)
+    }
+    this.notify()
+  }
+
+  private pushUndo(g: UndoGroup): void {
+    this.undoStack.push(g)
+    let bytes = 0
+    for (const x of this.undoStack) for (const p of x.patches) bytes += patchBytes(p)
+    while (this.undoStack.length > 1 && (bytes > MAX_UNDO_BYTES || this.undoStack.length > MAX_UNDO_GROUPS)) {
+      const dropped = this.undoStack.shift() as UndoGroup
+      for (const p of dropped.patches) bytes -= patchBytes(p)
+    }
   }
 
   execute(name: string, params: unknown, actor: Actor = 'human'): ExecResult {
@@ -140,7 +201,9 @@ export class Engine {
     const patches: Patch[] = []
     let changedPixels = 0
     if (before) {
-      patches.push({ t: 'proj', before, after: cloneProject(this.project) })
+      const after = cloneProject(this.project)
+      shareUnchangedCels(before, after)
+      patches.push({ t: 'proj', before, after })
     } else {
       for (const w of writes.values()) {
         const idx: number[] = []
@@ -161,16 +224,17 @@ export class Engine {
 
     let group: number
     if (patches.length) {
-      if (this.open) {
-        this.open.patches.push(...patches)
-        group = this.open.id
+      const open = this.open.get(actor)
+      if (open) {
+        open.patches.push(...patches)
+        group = open.id
       } else {
         group = ++this.groupSeq
-        this.undoStack.push({ id: group, label: name, patches })
+        this.pushUndo({ id: group, label: name, patches })
       }
       this.redoStack = []
     } else {
-      group = this.open?.id ?? ++this.groupSeq
+      group = this.open.get(actor)?.id ?? ++this.groupSeq
     }
 
     this.revision++
@@ -181,7 +245,7 @@ export class Engine {
   }
 
   undo(actor: Actor = 'human'): string | null {
-    if (this.open) this.endGroup()
+    this.endGroup(actor)
     const g = this.undoStack.pop()
     if (!g) return null
     for (let i = g.patches.length - 1; i >= 0; i--) this.apply(g.patches[i] as Patch, 'undo')

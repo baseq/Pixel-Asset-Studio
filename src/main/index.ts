@@ -141,8 +141,8 @@ function registerIpc(): void {
       return fail(e)
     }
   })
-  ipcMain.handle('group:begin', (_e, label: string) => engine.beginGroup(label))
-  ipcMain.handle('group:end', () => engine.endGroup())
+  ipcMain.handle('group:begin', (_e, label: string) => engine.beginGroup(label, 'human'))
+  ipcMain.handle('group:end', () => engine.endGroup('human'))
   ipcMain.handle('undo', () => void engine.undo('human'))
   ipcMain.handle('redo', () => void engine.redo('human'))
   ipcMain.handle('file:export', (_e, req: ExportRequest) => chooseAndExport(req))

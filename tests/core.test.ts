@@ -235,3 +235,39 @@ describe('layers and regions', () => {
     expect(pixelsAscii(e.project, {}).rows).toEqual(['12.12.', '34.34.'])
   })
 })
+
+describe('undo groups and history', () => {
+  it('keeps an agent group open when the human begins and ends their own', () => {
+    const e = fresh(4, 4)
+    e.beginGroup('agent work', 'agent')
+    e.execute('draw_pixels', { pixels: [{ x: 0, y: 0, color: 1 }] }, 'agent')
+    e.beginGroup('human stroke', 'human')
+    e.execute('draw_pixels', { pixels: [{ x: 1, y: 0, color: 2 }] }, 'human')
+    e.endGroup('human')
+    e.execute('draw_pixels', { pixels: [{ x: 2, y: 0, color: 3 }] }, 'agent')
+    e.endGroup('agent')
+    e.undo() // the agent group, pushed last, undoes both agent pixels
+    expect(pixelsAscii(e.project, {}).rows[0]).toBe('.2..')
+    e.undo() // the human stroke
+    expect(pixelsAscii(e.project, {}).rows[0]).toBe('....')
+  })
+
+  it('abortGroup rolls back everything in the group', () => {
+    const e = fresh(4, 4)
+    e.beginGroup('batch', 'agent')
+    e.execute('layer_add', { name: 'Extra' }, 'agent')
+    e.execute('draw_pixels', { pixels: [{ x: 0, y: 0, color: 1 }] }, 'agent')
+    e.abortGroup('agent')
+    expect(findSprite(e.project).layers).toHaveLength(1)
+    expect(pixelsAscii(e.project, {}).rows[0]).toBe('....')
+  })
+
+  it('structural undo snapshots share unchanged pixel data', () => {
+    const e = fresh(64, 64)
+    for (let i = 0; i < 5; i++) e.execute('layer_add', { name: `L${i}` })
+    for (let i = 0; i < 5; i++) e.undo()
+    expect(findSprite(e.project).layers).toHaveLength(1)
+    for (let i = 0; i < 5; i++) e.redo()
+    expect(findSprite(e.project).layers).toHaveLength(6)
+  })
+})

@@ -98,10 +98,10 @@ export function buildServer(opts: McpOptions): McpServer {
   server.registerTool(
     'group_begin',
     { description: 'Start grouping edits so the human can undo them as one step. End with group_end.', inputSchema: { label: z.string().optional() } },
-    ({ label }) => guard(() => (engine.beginGroup(label ?? 'agent edit'), text('Group started.')))
+    ({ label }) => guard(() => (engine.beginGroup(label ?? 'agent edit', 'agent'), text('Group started.')))
   )
   server.registerTool('group_end', { description: 'Finish the current edit group.', inputSchema: {} }, () =>
-    guard(() => (engine.endGroup(), text('Group ended.')))
+    guard(() => (engine.endGroup('agent'), text('Group ended.')))
   )
   server.registerTool('undo', { description: 'Undo the last edit or group (yours or the human\'s).', inputSchema: {} }, () =>
     guard(() => {
@@ -348,13 +348,13 @@ export function buildServer(opts: McpOptions): McpServer {
         const abs = resolveInWorkspace(workspace, a.path)
         const decode = opts.decodeImage ?? ((p: string) => decodePng(readFileSync(p)))
         const img = decode(abs)
-        let s = engine.project.sprites.find((x) => x.id === a.sprite || x.name.toLowerCase() === a.sprite?.toLowerCase())
-        if (!a.sprite && engine.project.activeSprite) s = findSprite(engine.project)
+        // With an explicit sprite, findSprite throws on a typo instead of silently creating a new one.
+        let s = a.sprite ? findSprite(engine.project, a.sprite) : engine.project.activeSprite ? findSprite(engine.project) : undefined
         const fitBox = 32
         const scale = Math.min(1, fitBox / Math.max(img.width, img.height))
         const width = a.width ?? (s && !a.height ? s.width : Math.max(1, Math.round(img.width * scale)))
         const height = a.height ?? (s && !a.width ? s.height : Math.max(1, Math.round(img.height * scale)))
-        engine.beginGroup('import_image')
+        engine.beginGroup('import_image', 'agent')
         let sCreated = false
         try {
           if (!s) {
@@ -383,9 +383,12 @@ export function buildServer(opts: McpOptions): McpServer {
             { sprite: s.id, layer: a.layer, frame, x: a.x, y: a.y, width, height, data: Array.from(r.indexes) },
             'agent'
           )
-          return text(`Imported ${img.width}x${img.height} image as ${width}x${height} pixels onto '${s.name}' (${res.changedPixels} pixels changed, revision ${res.revision}). Call render_snapshot to check it.`)
-        } finally {
-          engine.endGroup()
+          const out = text(`Imported ${img.width}x${img.height} image as ${width}x${height} pixels onto '${s.name}' (${res.changedPixels} pixels changed, revision ${res.revision}). Call render_snapshot to check it.`)
+          engine.endGroup('agent')
+          return out
+        } catch (e) {
+          engine.abortGroup('agent')
+          throw e
         }
       })
   )
