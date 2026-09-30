@@ -27,7 +27,14 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Build and publish installers
-        run: npm run release
+        shell: bash
+        run: |
+          # Unset secrets arrive as empty strings; electron-builder treats an empty
+          # CSC_LINK as a path and fails, so drop empty signing vars entirely.
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -z "${!v}" ] && unset "$v"
+          done
+          npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional code signing (leave unset for unsigned builds):
