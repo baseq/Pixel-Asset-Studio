@@ -8,15 +8,16 @@ import { Engine, CommandError, findSprite, type Project } from '../core'
 import type { AppInfo, CommandResult, ExportRequest, PickedImage } from '../shared/api'
 import { exportImageFile, exportSheetFiles } from './exporter'
 import { encodeGif } from './gif'
+import { IMAGE_FORMATS } from './encode'
 import { writeFileEnsuringDir } from './files'
 import { openProject, PROJECT_EXT, saveProject } from './files'
 import { startMcpServer, type RunningMcp } from './mcp'
-import { autoUpdater } from 'electron-updater'
 
 const DEFAULT_PORT = Number(process.env['PAS_MCP_PORT'] ?? 39217)
 
 let win: BrowserWindow | null = null
 let splash: BrowserWindow | null = null
+let mcpReady: Promise<void> = Promise.resolve()
 let mcp: RunningMcp | null = null
 let workspace = ''
 let currentFile: string | null = null
@@ -79,7 +80,20 @@ async function chooseAndOpen(): Promise<string | null> {
   }
 }
 
-async function chooseAndExport(req: ExportRequest): Promise<string | null> {
+function validateExportRequest(req: ExportRequest): ExportRequest {
+  const kinds = ['frame', 'sheet', 'gif']
+  if (!req || !kinds.includes(req.kind)) throw new Error(`Unknown export kind '${String(req?.kind)}'.`)
+  const format = req.kind === 'gif' ? 'gif' : req.format
+  if (format !== 'gif' && !IMAGE_FORMATS.includes(format)) throw new Error(`Unsupported export format '${String(format)}'.`)
+  const scale = req.scale ?? 1
+  if (!Number.isInteger(scale) || scale < 1 || scale > 64) throw new Error('Export scale must be a whole number from 1 to 64.')
+  const frame = req.frame
+  if (frame !== undefined && (!Number.isInteger(frame) || frame < 0)) throw new Error('Export frame must be a non-negative integer.')
+  return { ...req, format, scale, frame } as ExportRequest
+}
+
+async function chooseAndExport(raw: ExportRequest): Promise<string | null> {
+  const req = validateExportRequest(raw)
   const sprite = findSprite(engine.project)
   const suffix = req.kind === 'sheet' ? '-sheet' : req.kind === 'gif' ? '-anim' : ''
   const r = await dialog.showSaveDialog(win!, {
@@ -133,7 +147,7 @@ async function pickImage(): Promise<PickedImage | null> {
 
 function registerIpc(): void {
   ipcMain.handle('state:get', () => engine.getState())
-  ipcMain.handle('info:get', (): AppInfo => ({ mcpUrl: mcp?.url ?? null, workspace }))
+  ipcMain.handle('info:get', async (): Promise<AppInfo> => (await mcpReady, { mcpUrl: mcp?.url ?? null, workspace }))
   ipcMain.handle('cmd', (_e, name: string, params: unknown): CommandResult => {
     try {
       return { ok: true, summary: engine.execute(name, params, 'human').summary }
@@ -251,7 +265,7 @@ app.whenReady().then(async () => {
       cb({
         responseHeaders: {
           ...details.responseHeaders,
-          'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"]
+          'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:"]
         }
       })
     })
@@ -260,15 +274,15 @@ app.whenReady().then(async () => {
   registerIpc()
   broadcastSoon()
   buildMenu()
-  try {
-    mcp = await startMcpServer({ engine, workspace, port: DEFAULT_PORT, log: (m) => console.log(m), decodeImage })
-  } catch (e) {
-    console.error('Could not start the MCP server:', e)
-  }
   createWindow()
+  mcpReady = startMcpServer({ engine, workspace, port: DEFAULT_PORT, log: (m) => console.log(m), decodeImage })
+    .then((m) => void (mcp = m))
+    .catch((e) => console.error('Could not start the MCP server:', e))
+  await mcpReady
 
   // Auto-update from GitHub Releases (only for packaged builds; dev runs skip it).
   if (app.isPackaged) {
+    const { autoUpdater } = await import('electron-updater')
     autoUpdater.logger = console
     autoUpdater.autoDownload = true
     autoUpdater.on('update-downloaded', (info) => {

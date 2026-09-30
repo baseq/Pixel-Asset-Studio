@@ -271,3 +271,28 @@ describe('undo groups and history', () => {
     expect(findSprite(e.project).layers).toHaveLength(6)
   })
 })
+
+describe('project validation', () => {
+  it('round-trips a valid project', () => {
+    const e = fresh(5, 4)
+    e.execute('draw_from_ascii', { rows: ['.1.2.', '12121', '.....', '1...2'] })
+    const back = parseProject(serializeProject(e.project))
+    expect(pixelsAscii(back, {}).rows).toEqual(['.1.2.', '12121', '.....', '1...2'])
+  })
+
+  it('rejects files with missing or inconsistent data', () => {
+    const e = fresh(2, 2)
+    const good = JSON.parse(serializeProject(e.project))
+    const bad = (mutate: (f: any) => void) => {
+      const f = structuredClone(good)
+      mutate(f)
+      return () => parseProject(JSON.stringify(f))
+    }
+    expect(bad((f) => delete f.palettes)).toThrow(/palettes/)
+    expect(bad((f) => (f.sprites[0].cels = {}))).toThrow(/missing pixel data/)
+    expect(bad((f) => (f.sprites[0].palette = 'nope'))).toThrow(/unknown palette/)
+    expect(bad((f) => (f.activeSprite = 'ghost'))).toThrow(/activeSprite/)
+    expect(bad((f) => (f.sprites[0].cels[Object.keys(f.sprites[0].cels)[0]!] = ['zzzz', '0000']))).toThrow(/non-hex/)
+    expect(bad((f) => (f.sprites[0].cels[Object.keys(f.sprites[0].cels)[0]!] = ['ffff', '0000']))).toThrow(/color index/)
+  })
+})

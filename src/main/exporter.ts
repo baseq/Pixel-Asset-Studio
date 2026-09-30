@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { renderFrame, spriteSheet, upscale, type Project, type Sprite } from '../core'
 import { encodeImage, type ImageFormat } from './encode'
@@ -44,6 +45,16 @@ export function exportSheetFiles(project: Project, sprite: Sprite, abs: string, 
     tags: sprite.tags
   }
   const atlasPath = abs.slice(0, abs.length - extname(abs).length) + '.json'
+  // Never clobber an unrelated .json that happens to sit next to the image.
+  if (existsSync(atlasPath)) {
+    let ours = false
+    try {
+      ours = 'frameSize' in JSON.parse(readFileSync(atlasPath, 'utf8'))
+    } catch {
+      /* not JSON, so not ours */
+    }
+    if (!ours) throw new Error(`Refusing to overwrite '${basename(atlasPath)}': it is not a sprite atlas written by this app.`)
+  }
   writeFileEnsuringDir(abs, encodeImage(sheet, o.format))
   writeFileEnsuringDir(atlasPath, JSON.stringify(atlas, null, 2))
   return { width: sheet.width, height: sheet.height, atlasPath }

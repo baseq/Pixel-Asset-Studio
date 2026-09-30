@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { parseProject, serializeProject, type Engine } from '../core'
 
@@ -10,8 +10,16 @@ export function resolveInWorkspace(workspace: string, p: string, allowedExts?: s
   const root = resolve(workspace)
   const abs = isAbsolute(p) ? resolve(p) : resolve(root, p)
   const rel = relative(root, abs)
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..')) {
+  if (rel === '' || isAbsolute(rel) || rel.split(sep).includes('..')) {
     throw new Error(`Path '${p}' is outside the workspace folder (${root}). Use a relative path such as 'hero.png'.`)
+  }
+  // Follow symlinks: the deepest existing ancestor must really live inside the real workspace folder.
+  let probe = abs
+  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe)
+  const realRoot = existsSync(root) ? realpathSync(root) : root
+  const realRel = relative(realRoot, realpathSync(probe))
+  if (realRel.split(sep)[0] === '..' || isAbsolute(realRel)) {
+    throw new Error(`Path '${p}' resolves outside the workspace folder (${root}).`)
   }
   if (allowedExts && !allowedExts.includes(extname(abs).toLowerCase())) {
     throw new Error(`File '${p}' must end with ${allowedExts.join(' or ')}.`)
