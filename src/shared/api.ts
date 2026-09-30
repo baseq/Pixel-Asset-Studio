@@ -1,6 +1,6 @@
 import type { EngineState } from '../core'
 
-export type CommandResult = { ok: true; summary: string } | { ok: false; error: string }
+export type CommandResult = { ok: true; summary: string; revision?: number } | { ok: false; error: string }
 
 export interface ExportRequest {
   kind: 'frame' | 'sheet' | 'gif'

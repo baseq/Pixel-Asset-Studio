@@ -5,7 +5,7 @@ import type { Bitmap } from '../../core/render'
 import type { Project, Sprite } from '../../core/types'
 import type { PickedImage } from '../../shared/api'
 
-type Run = (name: string, params: unknown) => Promise<void>
+type Run = (name: string, params: unknown) => Promise<unknown>
 
 interface Props {
   image: PickedImage

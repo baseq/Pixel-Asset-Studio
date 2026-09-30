@@ -111,9 +111,20 @@ export class Engine {
   private groupSeq = 0
   private seq = 0
   private listeners = new Set<() => void>()
+  /** Cels written since takeDirty() was last called, as 'spriteId|celKey'. dirtyAll means structure changed. */
+  private dirtyCels = new Set<string>()
+  private dirtyAll = true
 
   constructor(project?: Project) {
     this.project = project ?? emptyProject()
+  }
+
+  /** What changed since the last call, so a UI can be sent only the cels that differ. Resets the tracker. */
+  takeDirty(): { all: boolean; cels: Set<string> } {
+    const out = { all: this.dirtyAll, cels: this.dirtyCels }
+    this.dirtyAll = false
+    this.dirtyCels = new Set()
+    return out
   }
 
   subscribe(fn: () => void): () => void {
@@ -141,6 +152,7 @@ export class Engine {
     this.undoStack = []
     this.redoStack = []
     this.open.clear()
+    this.dirtyAll = true
     this.revision++
     this.record(actor, 'project_load', `Loaded project '${project.name}'`, this.groupSeq + 1)
     this.notify()
@@ -201,6 +213,7 @@ export class Engine {
     const patches: Patch[] = []
     let changedPixels = 0
     if (before) {
+      this.dirtyAll = true
       const after = cloneProject(this.project)
       shareUnchangedCels(before, after)
       patches.push({ t: 'proj', before, after })
@@ -216,6 +229,7 @@ export class Engine {
           newv.push(c.new)
         }
         if (idx.length) {
+          this.dirtyCels.add(`${w.spriteId}|${w.key}`)
           patches.push({ t: 'px', spriteId: w.spriteId, key: w.key, idx, oldv, newv })
           changedPixels += idx.length
         }
@@ -284,8 +298,10 @@ export class Engine {
   private apply(p: Patch, dir: 'undo' | 'redo'): void {
     if (p.t === 'proj') {
       this.project = cloneProject(dir === 'undo' ? p.before : p.after)
+      this.dirtyAll = true
       return
     }
+    this.dirtyCels.add(`${p.spriteId}|${p.key}`)
     const data = this.project.sprites.find((s) => s.id === p.spriteId)?.cels[p.key]
     if (!data) return
     const vals = dir === 'undo' ? p.oldv : p.newv

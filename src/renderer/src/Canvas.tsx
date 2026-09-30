@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ellipsePoints, linePoints, rectPoints, type Point } from '../../core/geometry'
 import { parseColor } from '../../core/palettes'
 import { renderFrame } from '../../core/render'
@@ -10,6 +10,8 @@ export interface Selection { x: number; y: number; w: number; h: number }
 
 interface Props {
   project: Project
+  /** Engine revision of `project`; used to know when our local strokes have round-tripped. */
+  revision: number
   sprite: Sprite
   frame: number
   layerIndex: number
@@ -19,7 +21,7 @@ interface Props {
   filled: boolean
   grid: boolean
   onion: boolean
-  run: (name: string, params: unknown) => Promise<void>
+  run: (name: string, params: unknown) => Promise<unknown>
   begin: (label: string) => void
   end: () => void
   onPick: (color: number) => void
@@ -73,10 +75,38 @@ export function Canvas(p: Props) {
   const moving = useRef<{ start: Point; last: Point; sel: Selection } | null>(null)
   const [moveOffset, setMoveOffset] = useState<Point | null>(null)
   const drawing = useRef<{ last: Point } | null>(null)
+  // Pixels of the current stroke, painted locally the moment the pointer moves. The real edit goes to the
+  // main process and comes back as a new state; the overlay is dropped once that state has arrived.
+  const overlay = useRef(new Map<number, number>())
+  const [overlayTick, setOverlayTick] = useState(0)
+  const pending = useRef(0)
+  const settleRev = useRef(0)
+  const revisionRef = useRef(p.revision)
+  revisionRef.current = p.revision
   const { project, sprite, frame, zoom } = p
 
   const layer = sprite.layers[p.layerIndex] ?? sprite.layers[0]
   const cel = layer && sprite.frames[frame] ? sprite.cels[celKey(layer.id, (sprite.frames[frame] as { id: string }).id)] : undefined
+
+  const settle = (): void => {
+    if (overlay.current.size && pending.current === 0 && !drawing.current && revisionRef.current >= settleRev.current) {
+      overlay.current.clear()
+      setOverlayTick((n) => n + 1)
+    }
+  }
+  useEffect(settle, [p.revision]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Paint pixels locally right away, and send the edit. */
+  const strokeTo = (name: string, params: unknown, pts: Point[], color: number): void => {
+    for (const [x, y] of pts) if (x >= 0 && y >= 0 && x < sprite.width && y < sprite.height) overlay.current.set(y * sprite.width + x, color)
+    setOverlayTick((n) => n + 1)
+    pending.current++
+    void p.run(name, params).then((rev) => {
+      pending.current--
+      if (typeof rev === 'number') settleRev.current = Math.max(settleRev.current, rev)
+      settle()
+    })
+  }
 
   const toCanvas = (f: number): HTMLCanvasElement => {
     const bm = renderFrame(project, sprite, f)
@@ -127,6 +157,19 @@ export function Canvas(p: Props) {
       ctx.globalAlpha = 1
     }
     ctx.drawImage(base, 0, 0, sprite.width * zoom, sprite.height * zoom)
+    if (overlay.current.size && layer?.visible !== false) {
+      const pal = project.palettes[sprite.palette]
+      for (const [i, c] of overlay.current) {
+        const x = (i % sprite.width) * zoom
+        const y = Math.floor(i / sprite.width) * zoom
+        if (c === 0) ctx.clearRect(x, y, zoom, zoom)
+        else {
+          const [r, g, b] = parseColor(pal?.colors[c] ?? '#ffffff')
+          ctx.fillStyle = `rgb(${r},${g},${b})`
+          ctx.fillRect(x, y, zoom, zoom)
+        }
+      }
+    }
     if (shape) {
       const pal = project.palettes[sprite.palette]
       const hex = pal?.colors[p.color] ?? '#ffffff'
@@ -145,22 +188,25 @@ export function Canvas(p: Props) {
       const H = Math.round(sprite.height * zoom)
       const tw = sprite.tileSize?.w ?? 8
       const th = sprite.tileSize?.h ?? 8
+      // One path per line weight (major = tile boundary) instead of one stroke per line.
+      const major = new Path2D()
+      const minor = new Path2D()
       for (let x = 0; x <= sprite.width; x++) {
-        ctx.strokeStyle = x % tw === 0 ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.38)'
         const gx = Math.round(x * zoom) + 0.5
-        ctx.beginPath()
-        ctx.moveTo(gx, 0)
-        ctx.lineTo(gx, H)
-        ctx.stroke()
+        const path = x % tw === 0 ? major : minor
+        path.moveTo(gx, 0)
+        path.lineTo(gx, H)
       }
       for (let y = 0; y <= sprite.height; y++) {
-        ctx.strokeStyle = y % th === 0 ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.38)'
         const gy = Math.round(y * zoom) + 0.5
-        ctx.beginPath()
-        ctx.moveTo(0, gy)
-        ctx.lineTo(W, gy)
-        ctx.stroke()
+        const path = y % th === 0 ? major : minor
+        path.moveTo(0, gy)
+        path.lineTo(W, gy)
       }
+      ctx.strokeStyle = 'rgba(255,255,255,0.38)'
+      ctx.stroke(minor)
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)'
+      ctx.stroke(major)
       ctx.restore()
     }
     const sel = marquee ? normalize(marquee.start, marquee.cur) : p.selection
@@ -182,7 +228,7 @@ export function Canvas(p: Props) {
       ctx.fillRect(x, y, w, h)
       ctx.restore()
     }
-  }, [base, onionLayers, shape, marquee, p.selection, moveOffset, zoom, p.grid, p.color, p.filled, project, sprite])
+  }, [base, onionLayers, shape, marquee, p.selection, moveOffset, zoom, p.grid, p.color, p.filled, project, sprite, overlayTick])
 
   const pixelAt = (e: React.PointerEvent): Point => {
     const r = (ref.current as HTMLCanvasElement).getBoundingClientRect()
@@ -205,7 +251,8 @@ export function Canvas(p: Props) {
     } else if (p.tool === 'pencil' || p.tool === 'eraser') {
       p.begin(p.tool)
       drawing.current = { last: pt }
-      void p.run('draw_pixels', { pixels: [{ x: pt[0], y: pt[1], color: p.tool === 'eraser' ? 0 : p.color }], ...target })
+      const c = p.tool === 'eraser' ? 0 : p.color
+      strokeTo('draw_pixels', { pixels: [{ x: pt[0], y: pt[1], color: c }], ...target }, [pt], c)
     } else if (p.tool === 'line' || p.tool === 'rect' || p.tool === 'ellipse') {
       setShape({ tool: p.tool, start: pt, cur: pt })
     } else if (p.tool === 'select') {
@@ -225,7 +272,8 @@ export function Canvas(p: Props) {
       const last = drawing.current.last
       if (pt[0] === last[0] && pt[1] === last[1]) return
       const c = clamp(pt)
-      void p.run('draw_line', { x0: last[0], y0: last[1], x1: c[0], y1: c[1], color: p.tool === 'eraser' ? 0 : p.color, ...target })
+      const col = p.tool === 'eraser' ? 0 : p.color
+      strokeTo('draw_line', { x0: last[0], y0: last[1], x1: c[0], y1: c[1], color: col, ...target }, linePoints(last[0], last[1], c[0], c[1]), col)
       drawing.current = { last: c }
     } else if (shape) {
       setShape({ ...shape, cur: clamp(pt) })
@@ -240,6 +288,7 @@ export function Canvas(p: Props) {
     if (drawing.current) {
       drawing.current = null
       p.end()
+      settle()
     }
     if (shape) {
       const { name, params } = shapeParams(shape, p.color, p.filled, p.layerIndex, frame)

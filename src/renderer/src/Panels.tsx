@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LogEntry } from '../../core/engine'
 import { PRESET_NAMES } from '../../core/palettes'
 import { renderFrame } from '../../core/render'
-import type { Project, Sprite } from '../../core/types'
+import { celKey, type Project, type Sprite } from '../../core/types'
 import { Float } from './Float'
 import { Icons } from './Icons'
 import { targetIndex, useReorder } from './useReorder'
 
-type Run = (name: string, params: unknown) => Promise<void>
+type Run = (name: string, params: unknown) => Promise<unknown>
 const isTransparent = (hex: string): boolean => hex.length === 9 && hex.endsWith('00')
+
+// One scratch canvas shared by every thumbnail instead of allocating one per paint.
+let scratch: HTMLCanvasElement | null = null
 
 function paint(cv: HTMLCanvasElement | null, project: Project, sprite: Sprite, frame: number): void {
   const ctx = cv?.getContext('2d')
   if (!cv || !ctx) return
   const bm = renderFrame(project, sprite, frame)
-  const tmp = document.createElement('canvas')
+  const tmp = (scratch ??= document.createElement('canvas'))
   tmp.width = bm.width
   tmp.height = bm.height
   tmp.getContext('2d')?.putImageData(new ImageData(bm.data as Uint8ClampedArray<ArrayBuffer>, bm.width, bm.height), 0, 0)
@@ -27,11 +30,36 @@ function paint(cv: HTMLCanvasElement | null, project: Project, sprite: Sprite, f
   ctx.drawImage(tmp, (cv.width - w) / 2, (cv.height - h) / 2, w, h)
 }
 
-function Thumb(p: { project: Project; sprite: Sprite; frame: number; size: number }) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  useEffect(() => paint(ref.current, p.project, p.sprite, p.frame), [p.project, p.sprite, p.frame])
-  return <canvas ref={ref} width={p.size} height={p.size} />
+type ThumbProps = { project: Project; sprite: Sprite; frame: number; size: number }
+
+/** Everything a thumbnail's pixels depend on, so unrelated edits (other frames, the log) don't repaint it. */
+function thumbInputs(p: ThumbProps): unknown[] {
+  const { sprite, project } = p
+  const f = sprite.frames[p.frame]
+  return [
+    sprite.id,
+    p.frame,
+    p.size,
+    sprite.width,
+    sprite.height,
+    project.palettes[sprite.palette]?.colors.join(','),
+    sprite.layers.map((l) => `${l.id}:${l.visible}:${l.opacity}`).join(','),
+    ...sprite.layers.map((l) => (f ? sprite.cels[celKey(l.id, f.id)] : undefined))
+  ]
 }
+
+const Thumb = memo(
+  function Thumb(p: ThumbProps) {
+    const ref = useRef<HTMLCanvasElement>(null)
+    useEffect(() => paint(ref.current, p.project, p.sprite, p.frame))
+    return <canvas ref={ref} width={p.size} height={p.size} />
+  },
+  (a, b) => {
+    const x = thumbInputs(a)
+    const y = thumbInputs(b)
+    return x.length === y.length && x.every((v, i) => v === y[i])
+  }
+)
 
 export function ColorsSection(p: { project: Project; sprite: Sprite; color: number; onPick: (i: number) => void }) {
   const pal = p.project.palettes[p.sprite.palette]

@@ -157,12 +157,17 @@ export function App() {
   }, [])
 
   // Commands are sent one at a time so a fast stroke is applied in order.
-  const run = useCallback((name: string, params: unknown): Promise<void> => {
+  // Resolves to the engine revision the command produced, or null if it failed.
+  const run = useCallback((name: string, params: unknown): Promise<number | null> => {
     const next = queue.current.then(async () => {
       const r = await window.pas.command(name, params)
-      if (!r.ok) setNotice({ text: r.error, kind: 'error' })
+      if (!r.ok) {
+        setNotice({ text: r.error, kind: 'error' })
+        return null
+      }
+      return r.revision ?? null
     })
-    queue.current = next.catch(() => undefined)
+    queue.current = next.then(() => undefined, () => undefined)
     return next
   }, [])
   const begin = useCallback((label: string) => void (queue.current = queue.current.then(() => window.pas.beginGroup(label))), [])
@@ -258,6 +263,7 @@ export function App() {
           <div className="stage-inner">
             <Canvas
               project={project}
+              revision={state.revision}
               sprite={sprite}
               frame={safeFrame}
               layerIndex={safeLayer}

@@ -5,6 +5,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell,
 import type { Bitmap } from '../core/render'
 import { decodePng } from './decode'
 import { Engine, CommandError, findSprite, type Project } from '../core'
+import { forWire, makeMessage } from '../shared/delta'
 import type { AppInfo, CommandResult, ExportRequest, PickedImage } from '../shared/api'
 import { exportImageFile, exportSheetFiles } from './exporter'
 import { encodeGif } from './gif'
@@ -33,12 +34,16 @@ const engine = new Engine(starterProject())
 
 function broadcastSoon(): void {
   let queued = false
+  let lastSent = -1
   engine.subscribe(() => {
     if (queued) return
     queued = true
     setImmediate(() => {
       queued = false
-      win?.webContents.send('state', engine.getState())
+      if (!win) return
+      const msg = makeMessage(engine, lastSent)
+      lastSent = engine.revision
+      win.webContents.send('state', msg)
     })
   })
 }
@@ -146,11 +151,12 @@ async function pickImage(): Promise<PickedImage | null> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('state:get', () => engine.getState())
+  ipcMain.handle('state:get', () => forWire(engine.getState()))
   ipcMain.handle('info:get', async (): Promise<AppInfo> => (await mcpReady, { mcpUrl: mcp?.url ?? null, workspace }))
   ipcMain.handle('cmd', (_e, name: string, params: unknown): CommandResult => {
     try {
-      return { ok: true, summary: engine.execute(name, params, 'human').summary }
+      const r = engine.execute(name, params, 'human')
+      return { ok: true, summary: r.summary, revision: r.revision }
     } catch (e) {
       return fail(e)
     }
