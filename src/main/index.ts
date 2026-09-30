@@ -17,7 +17,6 @@ import { startMcpServer, type RunningMcp } from './mcp'
 const DEFAULT_PORT = Number(process.env['PAS_MCP_PORT'] ?? 39217)
 
 let win: BrowserWindow | null = null
-let splash: BrowserWindow | null = null
 let mcpReady: Promise<void> = Promise.resolve()
 let mcp: RunningMcp | null = null
 let workspace = ''
@@ -198,38 +197,8 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-const SPLASH_HTML = `<!doctype html><meta charset="utf-8"><style>
-  html,body{margin:0;height:100%;background:#1b1b22;color:#e8e8ee;font-family:-apple-system,system-ui,sans-serif;-webkit-app-region:drag;user-select:none}
-  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;border:1px solid #33333f;box-sizing:border-box}
-  h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.3px}
-  .grid{display:grid;grid-template-columns:repeat(4,14px);gap:3px}
-  .grid i{width:14px;height:14px;background:#6c7bff;opacity:.15;animation:p 1.2s infinite}
-  @keyframes p{40%{opacity:1}}
-  p{margin:0;font-size:12px;color:#8a8a9a}
-</style>
-<div class="grid">${Array.from({ length: 16 }, (_, i) => `<i style="animation-delay:${((i % 4) + Math.floor(i / 4)) * 0.12}s"></i>`).join('')}</div>
-<h1>Pixel Asset Studio</h1><p>Starting…</p>`
-
-function createSplash(): void {
-  splash = new BrowserWindow({
-    width: 340,
-    height: 240,
-    frame: false,
-    resizable: false,
-    movable: true,
-    show: false,
-    backgroundColor: '#1b1b22',
-    alwaysOnTop: true,
-    webPreferences: { sandbox: true, contextIsolation: true }
-  })
-  splash.once('ready-to-show', () => splash?.show())
-  splash.on('closed', () => (splash = null))
-  void splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SPLASH_HTML)}`)
-}
-
 function createWindow(): void {
   win = new BrowserWindow({
-    show: false,
     width: 1280,
     height: 820,
     minWidth: 900,
@@ -253,16 +222,10 @@ function createWindow(): void {
   if (dev) win.webContents.openDevTools({ mode: 'detach' })
   if (dev) void win.loadURL(dev)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
-  // Reveal the real window once it has painted, then drop the splash.
-  win.once('ready-to-show', () => {
-    win?.show()
-    splash?.close()
-  })
   win.on('closed', () => (win = null))
 }
 
 app.whenReady().then(async () => {
-  createSplash()
   workspace = join(app.getPath('documents'), 'PixelAssetStudio')
   mkdirSync(workspace, { recursive: true })
 
