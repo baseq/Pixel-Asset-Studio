@@ -14,6 +14,7 @@ export const Icons: Record<string, ReactElement> = {
   hand: <svg {...base}><path d="M18 11V6a2 2 0 0 0-4 0v5" /><path d="M14 10V4a2 2 0 0 0-4 0v6" /><path d="M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.6L3.2 15.4a2 2 0 0 1 3.1-2.5L8 15" /></svg>,
   filled: <svg {...base}><rect x="4" y="5" width="16" height="14" rx="1" fill="currentColor" fillOpacity="0.45" /></svg>,
   onion: <svg {...base}><rect x="7" y="7" width="12" height="12" rx="2" /><path d="M4 15V6a2 2 0 0 1 2-2h9" strokeOpacity="0.45" /><path d="M9.5 12.5l2 2 3.5-4" /></svg>,
+  fit: <svg {...base}><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" /><rect x="8" y="8" width="8" height="8" rx="1" /></svg>,
   grid: <svg {...base}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>,
   play: <svg {...base} fill="currentColor" stroke="none"><path d="M6 4l14 8-14 8Z" /></svg>,
   pause: <svg {...base} fill="currentColor" stroke="none"><rect x="5" y="4" width="5" height="16" rx="1" /><rect x="14" y="4" width="5" height="16" rx="1" /></svg>,

@@ -76,14 +76,6 @@ export function App() {
       return z
     })
   }, [])
-  // Centre the canvas when a sprite first appears or another sprite is selected.
-  const spriteKey = state?.project.activeSprite ?? state?.project.sprites[0]?.id ?? null
-  useLayoutEffect(() => {
-    const el = stageRef.current
-    if (!el || !spriteKey) return
-    el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2
-    el.scrollTop = (el.scrollHeight - el.clientHeight) / 2
-  }, [spriteKey])
 
   useLayoutEffect(() => {
     const el = stageRef.current
@@ -115,10 +107,14 @@ export function App() {
     return () => el.removeEventListener('wheel', onWheel)
   }, [zoomAt, state === null])
 
+  const stateRef = useRef<EngineState | null>(null)
+  stateRef.current = state
   const fitToWindow = useCallback(() => {
     const el = stageRef.current
-    const sp = state?.project.sprites.find((s) => s.id === state.project.activeSprite) ?? state?.project.sprites[0]
+    const st = stateRef.current
+    const sp = st?.project.sprites.find((s) => s.id === st.project.activeSprite) ?? st?.project.sprites[0]
     if (!el || !sp) return
+    // Leave room for the floating panels: tools on the left, inspector on the right, timeline below.
     const z = Math.max(1, Math.floor(Math.min((el.clientWidth - 440) / sp.width, (el.clientHeight - 260) / sp.height)))
     zoomF.current = z
     setZoom(z)
@@ -126,7 +122,16 @@ export function App() {
       el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2
       el.scrollTop = (el.scrollHeight - el.clientHeight) / 2
     })
-  }, [state])
+  }, [])
+
+  // Fit the canvas to the window when a sprite first appears, another sprite is selected,
+  // or the sprite's size changes (new sprite, opened project, import into a new sprite).
+  const activeSp = state?.project.sprites.find((s) => s.id === state.project.activeSprite) ?? state?.project.sprites[0]
+  const spriteKey = activeSp ? `${activeSp.id}:${activeSp.width}x${activeSp.height}` : null
+  useLayoutEffect(() => {
+    if (spriteKey) fitToWindow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spriteKey])
 
   const onStagePointerDown = (e: React.PointerEvent): void => {
     const el = stageRef.current
@@ -157,17 +162,12 @@ export function App() {
   }, [])
 
   // Commands are sent one at a time so a fast stroke is applied in order.
-  // Resolves to the engine revision the command produced, or null if it failed.
-  const run = useCallback((name: string, params: unknown): Promise<number | null> => {
+  const run = useCallback((name: string, params: unknown): Promise<void> => {
     const next = queue.current.then(async () => {
       const r = await window.pas.command(name, params)
-      if (!r.ok) {
-        setNotice({ text: r.error, kind: 'error' })
-        return null
-      }
-      return r.revision ?? null
+      if (!r.ok) setNotice({ text: r.error, kind: 'error' })
     })
-    queue.current = next.then(() => undefined, () => undefined)
+    queue.current = next.catch(() => undefined)
     return next
   }, [])
   const begin = useCallback((label: string) => void (queue.current = queue.current.then(() => window.pas.beginGroup(label))), [])
@@ -263,7 +263,6 @@ export function App() {
           <div className="stage-inner">
             <Canvas
               project={project}
-              revision={state.revision}
               sprite={sprite}
               frame={safeFrame}
               layerIndex={safeLayer}
@@ -335,8 +334,9 @@ export function App() {
         </div>
         <div className="group">
           <button aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomAt(zoomF.current / 1.25)}>{Icons['minus']}</button>
-          <button className="zoom mono" title="Fit to window (0)" onClick={fitToWindow}>{Math.round(zoom * 100)}%</button>
+          <span className="zoom mono">{Math.round(zoom * 100)}%</span>
           <button aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomAt(zoomF.current * 1.25)}>{Icons['plus']}</button>
+          <button aria-label="Fit to screen" title="Fit to screen (0)" onClick={fitToWindow}>{Icons['fit']}</button>
         </div>
         <div className="group" aria-label="View">
           {(tool === 'rect' || tool === 'ellipse') && (
@@ -351,10 +351,6 @@ export function App() {
               {Icons[t.icon]}
             </button>
           ))}
-        </div>
-        <div className="pill">
-          <span className={'dot' + (info?.mcpUrl ? '' : ' off')} />
-          <span>{info?.mcpUrl ? 'Agent' : 'No agent'}</span>
         </div>
         <div className="menu-wrap">
           <button className="primary" onClick={() => setExportOpen(!exportOpen)} disabled={!sprite} aria-haspopup="menu" aria-expanded={exportOpen}>Export ▾</button>

@@ -1,9 +1,3 @@
-"""Browser smoke test for the editor UI (no Electron needed).
-
-  npx vite --config tests/ui/vite.config.ts &      # serves the harness on :5199
-  pip install playwright && playwright install chromium
-  python3 tests/ui/smoke.py
-"""
 from playwright.sync_api import sync_playwright
 import json
 
@@ -20,8 +14,9 @@ with sync_playwright() as p:
     page.goto('http://localhost:5199/harness.html')
     page.wait_for_selector('canvas')
     page.screenshot(path='ui-0-initial.png')
+    page.wait_for_timeout(300)
     box = page.locator('.canvas-frame canvas').bounding_box()
-    Z = 16
+    Z = int(page.locator('.group .zoom').inner_text()[:-1]) / 100
     def px(x, y): return (box['x'] + x * Z + Z // 2, box['y'] + y * Z + Z // 2)
 
     # pencil stroke = one undo step

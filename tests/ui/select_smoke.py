@@ -5,7 +5,7 @@ with sync_playwright() as p:
     errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.goto('http://localhost:5199/harness.html'); pg.wait_for_selector('canvas')
     pg.evaluate("window.__engine.execute('draw_from_ascii', {rows:['12','34']}, 'agent')"); pg.wait_for_timeout(200)
-    box = pg.locator('.canvas-frame canvas').bounding_box(); Z = 16
+    pg.wait_for_timeout(300); box = pg.locator('.canvas-frame canvas').bounding_box(); Z = int(pg.locator('.group .zoom').inner_text()[:-1]) / 100
     def px(x, y): return (box['x'] + x*Z + Z/2, box['y'] + y*Z + Z/2)
     def rows(): return pg.evaluate("(function(){const s=window.__engine.project.sprites[0]; const d=Object.values(s.cels)[0]; return Array.from({length:s.height},(_,y)=>Array.from(d.slice(y*s.width,(y+1)*s.width)).join(''))})()")
     pg.keyboard.press('m')
