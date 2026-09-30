@@ -22,7 +22,7 @@ mac:
       arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
-  # Unsigned builds work: users right-click ▸ Open the first time. To sign and notarize, set
+  # Unsigned builds work: users open System Settings ▸ Privacy & Security ▸ Open Anyway the first time (macOS 15+). To sign and notarize, set
   # CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID as secrets.
   hardenedRuntime: true
   gatekeeperAssess: false
