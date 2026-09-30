@@ -61,6 +61,21 @@ Frames live in the timeline at the bottom: add (copy of current), move left/righ
 
 The palette can be the sprite's own, or derived from the picture with median cut (2–64 colours). The whole import is one undo step. Code: `src/core/pixelate.ts`; the PNG decoder is `src/main/decode.ts`, other formats go through Electron's `nativeImage`.
 
+## Releasing
+
+Installers for macOS (dmg/zip, Apple Silicon and Intel), Windows (NSIS installer) and Linux (AppImage, deb) are built by GitHub Actions and attached to a GitHub Release.
+
+1. Bump `version` in `package.json` and commit.
+2. Tag and push: `git tag v0.1.0 && git push origin main --tags`
+3. The **Release** workflow builds on all three platforms and creates a *draft* release for the tag with the installers and the update feed files (`latest*.yml`).
+4. Review the draft on GitHub and press **Publish**.
+
+Installed apps check the release feed on launch (`electron-updater`) and offer to restart once an update has downloaded.
+
+Builds are unsigned by default: macOS users right-click > Open the first time, and Windows SmartScreen shows a warning until the app has reputation. To sign, add repository secrets `CSC_LINK` / `CSC_KEY_PASSWORD` (certificate) and, for macOS notarization, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, then set `notarize: true` in `electron-builder.yml`.
+
+Local packaging for the current machine: `npm run dist` (installers in `release/`), or `npm run dist:dir` for an unpacked app to test. **CI** runs typecheck, tests and a build on every push and pull request.
+
 ## Tests
 
 ```bash

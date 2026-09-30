@@ -10,10 +10,14 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dist": "electron-vite build && electron-builder",
+    "dist:dir": "electron-vite build && electron-builder --dir",
+    "release": "electron-vite build && electron-builder --publish always"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "electron-updater": "^6.8.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.5"
@@ -24,9 +28,21 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vitest": "^5.0.3"
-  }
+  },
+  "author": {
+    "name": "Ionut Jenescu",
+    "email": "ionut.jenescu@e-spres-oh.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/baseq/Pixel-Asset-Studio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baseq/Pixel-Asset-Studio.git"
+  },
+  "desktopName": "pixel-asset-studio.desktop"
 }

@@ -1,0 +1,51 @@
+appId: com.baseq.pixelassetstudio
+productName: Pixel Asset Studio
+copyright: Copyright © 2026 Ionut Jenescu
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+asar: true
+# Where releases are published and where the app looks for updates.
+publish:
+  provider: github
+  owner: baseq
+  repo: Pixel-Asset-Studio
+  releaseType: draft
+mac:
+  category: public.app-category.graphics-design
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Unsigned builds work: users right-click ▸ Open the first time. To sign and notarize, set
+  # CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID as secrets.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+dmg:
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+linux:
+  category: Graphics
+  syncDesktopName: true
+  maintainer: ionut.jenescu@e-spres-oh.com
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}

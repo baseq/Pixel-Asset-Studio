@@ -11,6 +11,7 @@ import { encodeGif } from './gif'
 import { writeFileEnsuringDir } from './files'
 import { openProject, PROJECT_EXT, saveProject } from './files'
 import { startMcpServer, type RunningMcp } from './mcp'
+import { autoUpdater } from 'electron-updater'
 
 const DEFAULT_PORT = Number(process.env['PAS_MCP_PORT'] ?? 39217)
 
@@ -228,6 +229,28 @@ app.whenReady().then(async () => {
     console.error('Could not start the MCP server:', e)
   }
   createWindow()
+
+  // Auto-update from GitHub Releases (only for packaged builds; dev runs skip it).
+  if (app.isPackaged) {
+    autoUpdater.logger = console
+    autoUpdater.autoDownload = true
+    autoUpdater.on('update-downloaded', (info) => {
+      void dialog
+        .showMessageBox(win!, {
+          type: 'info',
+          buttons: ['Restart now', 'Later'],
+          defaultId: 0,
+          message: `Pixel Asset Studio ${info.version} is ready`,
+          detail: 'The update has been downloaded and will be installed when you restart.'
+        })
+        .then((r) => {
+          if (r.response === 0) autoUpdater.quitAndInstall()
+        })
+    })
+    autoUpdater.on('error', (e) => console.warn('Update check failed:', e.message))
+    void autoUpdater.checkForUpdates().catch(() => undefined)
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
